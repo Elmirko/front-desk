@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Front Desk</title>
+<meta name="theme-color" content="#03080e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- sign in -->
+<section id="scr-auth" class="screen" hidden>
+ <form class="card hud" id="authForm">
+  <h1 id="authTitle">Sign in</h1>
+  <p class="sub">Front desk, housekeeping and maintenance in one live view.</p>
+  <label class="f" for="email">Email</label><input id="email" type="email" autocomplete="email" required>
+  <label class="f" for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" minlength="6" required>
+  <button class="big b-hud" id="authBtn" type="submit">Sign in</button>
+  <button class="linkbtn" id="authSwitch" type="button">New here? Create an account</button>
+  <div class="err" id="authErr" role="alert"></div>
+ </form>
+</section>
+
+<!-- first time: create or join a hotel -->
+<section id="scr-onboard" class="screen" hidden>
+ <div class="two">
+  <form class="card hud" id="createForm">
+   <h1>Create a hotel</h1>
+   <p class="sub">You become the owner. Next you set up floors and rooms.</p>
+   <label class="f" for="hname">Hotel name</label><input id="hname" required maxlength="120">
+   <button class="big b-hud" type="submit">Create hotel</button>
+   <div class="err" id="createErr" role="alert"></div>
+  </form>
+  <form class="card hud" id="joinForm">
+   <h1>Join a hotel</h1>
+   <p class="sub">Use the code your manager gave you.</p>
+   <label class="f" for="jcode">Invite code</label><input id="jcode" required autocapitalize="characters" style="font-family:var(--f-m);letter-spacing:.2em">
+   <label class="f" for="jname">Your name</label><input id="jname" required maxlength="60">
+   <button class="big b-free" type="submit">Join</button>
+   <div class="err" id="joinErr" role="alert"></div>
+  </form>
+ </div>
+ <button class="linkbtn" id="obSignOut" style="margin-top:20px">Sign out</button>
+</section>
+
+<!-- the app -->
+<div class="wrap" id="scr-app" hidden>
+ <header>
+  <div class="brand"><span id="hotelName"></span><h1 id="t-title">Front desk</h1></div>
+  <div class="concierge" id="concierge">
+   <label for="cq"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>Concierge</label>
+   <input id="cq" type="search" autocomplete="off" spellcheck="false" placeholder="3 beds · sea view · quiet" aria-label="Concierge room search">
+   <kbd>/</kbd>
+   <div class="cres" id="cres" hidden></div>
+  </div>
+  <div class="tabs" role="tablist" id="tabs"></div>
+  <select class="hotelpick" id="hotelPick" hidden aria-label="Hotel"></select>
+  <div class="demo-roles" id="demoRoles" hidden></div>
+  <button class="ghost" id="calmBtn" aria-pressed="false" title="Stop the rotation and animations for everyday work">Calm mode</button>
+  <button class="ghost" id="signOut">Sign out</button>
+ </header>
+ <div id="banner" hidden></div>
+ <section id="view-desk" class="deskwrap" hidden>
+  <div id="stage" class="mode-b">
+   <div class="stage-top"><button class="ghost" id="back">‹ Building</button><span class="mode-label" id="modeLabel"></span><span class="mode-hint" id="modeHint"></span><div class="fsw" id="fsw"></div></div>
+   <div id="next"></div>
+   <div id="holo" aria-label="Building hologram"></div>
+   <div id="world"></div>
+   <div class="legend"><span><i style="background:var(--free)"></i>Room free</span><span><i style="background:var(--occ)"></i>Floor full</span><span><i style="background:var(--clean)"></i>Cleaning</span><span><i style="background:var(--issue)"></i>Repairs</span></div>
+  </div>
+  <div id="floorList"></div>
+  <aside id="side" class="hud panel"></aside>
+ </section>
+ <section id="view-hk" hidden><div class="cards" id="hkList"></div></section>
+ <section id="view-mt" hidden><div class="cards" id="mtList"></div></section>
+ <section id="view-setup" class="setup" hidden></section>
+ <section id="view-team" class="team" hidden></section>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<div id="planModal" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="backend.js"></script>
+<script src="shared.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

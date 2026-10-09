@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Maintenance</title>
+<meta name="theme-color" content="#03080e">
+<link rel="manifest" href="mt.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="kiosk.css">
+</head>
+<body class="kiosk">
+<section id="kLogin" class="screen" hidden>
+ <form class="card hud" id="kForm">
+  <h1>Maintenance</h1>
+  <p class="sub">Sign in with your staff account.</p>
+  <label class="f" for="kEmail">Email</label><input id="kEmail" type="email" autocomplete="email" required>
+  <label class="f" for="kPw">Password</label><input id="kPw" type="password" autocomplete="current-password" required>
+  <button class="big b-hud" type="submit">Sign in</button>
+  <div class="err" id="kErr" role="alert"></div>
+ </form>
+</section>
+<div id="kApp" hidden>
+ <header class="k-top">
+  <div><span class="k-role">Maintenance</span><b id="kHotel"></b></div>
+  <span id="kClock" class="k-clock"></span>
+  <button class="ghost" id="kAlerts">Turn on alerts</button>
+  <button class="ghost" id="kOut">Sign out</button>
+ </header>
+ <div id="alert" class="k-alert" hidden role="alert"></div>
+ <main id="kMain"></main>
+</div>
+<div id="toasts" aria-live="polite"></div>
+<script>window.KIOSK = "mt";</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="backend.js"></script>
+<script src="shared.js"></script>
+<script src="kiosk.js"></script>
+</body>
+</html>

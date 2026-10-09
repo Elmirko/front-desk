@@ -1,0 +1,39 @@
+/* staff apps: everything big enough to hit with a glove or a wet hand */
+body.kiosk{min-height:100vh}
+.k-top{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+.k-top>div{display:flex;flex-direction:column;margin-right:auto}
+.k-role{font-family:var(--f-m);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--hud)}
+.k-top b{font-family:var(--f-h);font-size:20px;letter-spacing:.06em;text-transform:uppercase}
+.k-clock{font-family:var(--f-m);font-size:20px;color:var(--muted)}
+#kAlerts.on{border-color:var(--free);color:var(--free)}
+#kMain{max-width:1100px;margin:0 auto;padding:16px}
+.k-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+.k-tile{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:150px;padding:18px;border-radius:18px;border:3px solid var(--clean);background:color-mix(in srgb,var(--clean) 12%,transparent);text-align:left}
+.k-tile.cleaning{border-color:var(--hud);background:color-mix(in srgb,var(--hud) 14%,transparent);animation:kp 2s ease-in-out infinite}
+.k-tile.mt{border-color:var(--issue);background:color-mix(in srgb,var(--issue) 12%,transparent)}
+.k-tile.mt.working{border-color:var(--hud);animation:kp 2s ease-in-out infinite}.k-tile.mt.parts{border-color:var(--occ)}
+@keyframes kp{50%{box-shadow:0 0 28px var(--glow)}}
+.k-n{font-family:var(--f-h);font-weight:700;font-size:54px;line-height:1}
+.k-s{font-family:var(--f-h);font-weight:700;font-size:16px;letter-spacing:.06em;text-transform:uppercase}
+.k-m{color:var(--muted);font-size:14px}
+.k-empty,.k-done{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;min-height:60vh;text-align:center;padding:20px}
+.k-empty b,.k-done b{font-family:var(--f-h);font-size:28px;letter-spacing:.06em;text-transform:uppercase}
+.k-empty span{color:var(--muted)}.k-empty a{color:var(--hud)}
+.k-check{width:120px;height:120px;border-radius:50%;display:grid;place-items:center;font-size:64px;background:var(--free);color:#04140d;box-shadow:0 0 50px color-mix(in srgb,var(--free) 60%,transparent)}
+.k-back{border:0;background:none;color:var(--hud);font-family:var(--f-h);font-weight:700;font-size:18px;padding:6px 0 14px}
+.k-room{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.k-head{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}.k-head span:last-child{color:var(--muted);font-size:17px}
+.k-big{font-family:var(--f-h);font-weight:700;font-size:84px;line-height:1}
+.k-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-height:140px;border:0;border-radius:22px;font-family:var(--f-h);font-weight:700;font-size:42px;letter-spacing:.1em}
+.k-btn small{font-family:var(--f-b);font-weight:600;font-size:16px;letter-spacing:0;opacity:.85}
+.k-btn.in{background:var(--clean);color:#1d1600}.k-btn.out{background:var(--free);color:#04140d}
+.k-btn.mid{background:var(--clean);color:#1d1600;min-height:100px;font-size:30px}.k-btn.bad{background:var(--issue);color:#1d0b00;min-height:100px;font-size:30px}
+.k-btn:active{transform:scale(.98)}.k-btn:disabled{opacity:.5}
+.k-q{font-size:18px;margin:0;color:var(--muted)}
+.k-warn{margin:0;font-family:var(--f-h);font-weight:700;letter-spacing:.06em;color:var(--occ);font-size:18px;text-transform:uppercase}
+.k-chips button{font-size:17px;padding:12px 18px}
+.k-note{border:1px solid var(--line);background:transparent;border-radius:12px;padding:16px;font:inherit;font-size:17px;color:var(--ink)}
+.k-plan{border:1px solid var(--line);border-radius:14px;padding:10px}
+.k-alert{position:sticky;top:64px;z-index:6;margin:10px 16px 0;padding:16px 18px;border-radius:14px;background:var(--clean);color:#1d1600;display:flex;flex-direction:column;gap:2px;animation:tin .3s}
+.k-alert b{font-family:var(--f-h);font-size:22px;letter-spacing:.04em}
+.linkbtn{border:0;background:none;color:var(--hud);font-weight:600;padding:8px;text-decoration:underline}
