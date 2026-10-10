@@ -7,6 +7,13 @@
   const BEDDESC = { sgl: "1 single", dbl: "1 king", twn: "2 singles", tpl: "3 singles", fam: "1 king + 2 singles", ste: "1 king + sofa bed",
     stu: "1 queen + kitchenette", ap1: "1 king + sofa bed", ap2: "1 king + 2 singles + sofa bed", ap3: "2 kings + 2 singles + sofa bed" };
   const isApt = (ty) => /^(stu|ap\d)$/.test(ty);
+  // other spaces: not sold, but cleaned, repaired and shown on the plan
+  const SPACES = { conf: "Conference room", meet: "Meeting room", rest: "Restaurant", bar: "Bar", kit: "Kitchen", spa: "Spa", gym: "Gym", pool: "Pool",
+    laun: "Laundry", stor: "Storage", staff: "Staff room", office: "Office", tech: "Technical room", lobby: "Lobby", wc: "Public restroom", park: "Parking" };
+  const STAFF_ONLY = new Set(["kit", "laun", "stor", "staff", "office", "tech"]);
+  const isSpace = (ty) => !!SPACES[ty];
+  Object.assign(TY, SPACES);
+  Object.keys(SPACES).forEach((k) => { BEDS[k] = 0; PAX[k] = 1; BEDDESC[k] = STAFF_ONLY.has(k) ? "staff only" : "guest area"; });
 
   // Floor-plan templates for apartments. Units: 100 wide × 64 deep. k = bed | living | kitchen | bath | entry
   const LAYOUTS = {
@@ -46,5 +53,5 @@
     const e = L.find((s) => s.k === "entry"); if (e) g += `<line class="door" x1="${e.x + e.w / 2 - 4}" y1="${e.y + e.h - 0.4}" x2="${e.x + e.w / 2 + 4}" y2="${e.y + e.h - 0.4}"/>`;
     return `<svg class="schem ${big ? "big" : ""}" viewBox="-1 -1 102 ${H + 2}" role="img" aria-label="Floor plan of ${esc(TY[r.ty || r.type])}">${g}</svg>`;
   }
-  window.SH = { TY, BEDS, PAX, BEDROOMS, BEDDESC, LAYOUTS, isApt, layoutOf, schematic, esc };
+  window.SH = { TY, BEDS, PAX, BEDROOMS, BEDDESC, LAYOUTS, isApt, SPACES, STAFF_ONLY, isSpace, layoutOf, schematic, esc };
 })();

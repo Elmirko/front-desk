@@ -11,6 +11,15 @@ const mins = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso))
 const dur = (m) => (m < 1 ? "under a minute" : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? " " + (m % 60) + " min" : ""}`);
 const floorName = (fid) => { const f = floors[fid]; return f ? f.name || (f.level === 0 ? "Ground floor" : "Floor " + f.level) : ""; };
 const roomOf = (id) => rooms[id] || {};
+// plain facts instead of running timers: "10:42 · 35 min ago"
+const ago = (iso) => { const m = mins(iso); return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.floor(m / 60)} h ago` : `${Math.floor(m / 1440)} d ago`; };
+const fmt = (iso) => { if (!iso) return "no record"; const d = new Date(iso), today = new Date().toDateString() === d.toDateString();
+  return `${today ? "" : d.toLocaleDateString([], { day: "numeric", month: "short" }) + " "}${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${ago(iso)}`; };
+const ROLE = { owner: "Owner", desk: "Front desk", hk: "Housekeeping", mt: "Maintenance" };
+let members = {}, evc = {};
+const who = (uid) => { const m = members[uid]; return m ? m.display_name || ROLE[m.role] : ""; };
+async function loadEvents(roomId) { if (evc[roomId]) return; try { evc[roomId] = await api.events(roomId); render(); } catch (e) {} }
+const info = (rows) => `<dl class="k-info">${rows.filter(Boolean).map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("")}</dl>`;
 const toast = (t) => { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; $("toasts").appendChild(d); setTimeout(() => d.remove(), 3500); };
 
 // ───────── alerts: sound + vibration + system notification ─────────
@@ -38,16 +47,16 @@ async function load() {
   const d = await api.load(H.id);
   floors = Object.fromEntries(d.floors.map((f) => [f.id, f]));
   rooms = Object.fromEntries(d.rooms.map((r) => [r.id, r]));
-  issues = d.issues;
+  issues = d.issues; members = Object.fromEntries((d.members || []).map((m) => [m.user_id, m])); evc = {};
 }
 function onChange(table, type, row) {
   if (table === "setup" || (table === "rooms" && type !== "UPDATE")) { load().then(render); return; }
   if (table === "rooms" && row) { const prev = rooms[row.id];
     if (MODE === "hk" && row.status === "dirty" && (!prev || prev.status !== "dirty")) alertNew(`Room ${row.number} needs cleaning`, `${floorName(row.floor_id)} · guest checked out`);
-    rooms[row.id] = { ...prev, ...row }; }
+    rooms[row.id] = { ...prev, ...row }; delete evc[row.id]; }
   if (table === "issues" && row) { const i = issues.findIndex((x) => x.id === row.id);
     if (i < 0) { issues.push(row); if (MODE === "mt") alertNew(`New issue · Room ${roomOf(row.room_id).number || ""}`, row.text); }
-    else issues[i] = { ...issues[i], ...row }; }
+    else issues[i] = { ...issues[i], ...row }; delete evc[row.room_id]; }
   render();
 }
 
@@ -57,13 +66,24 @@ function hkList() {
     .sort((a, b) => (b.status === "cleaning") - (a.status === "cleaning") || new Date(a.status_since) - new Date(b.status_since));
   if (!list.length) return `<div class="k-empty"><b>All rooms are clean</b><span>New rooms appear here the moment a guest checks out.</span></div>`;
   return `<div class="k-grid">${list.map((r) => `<button class="k-tile ${r.status}" data-room="${r.id}"><span class="k-n">${esc(r.number)}</span>
-    <span class="k-s">${r.status === "cleaning" ? "IN PROGRESS · " + dur(mins(r.status_since)) : "WAITING " + dur(mins(r.status_since))}</span><span class="k-m">${esc(floorName(r.floor_id))} · ${esc(TY[r.type] || "")}</span></button>`).join("")}</div>`;
+    <span class="k-s">${r.status === "cleaning" ? "IN PROGRESS · since " + fmt(r.status_since).split(" · ")[0] : (window.SH.isSpace(r.type) ? "REQUESTED " : "CHECKED OUT ") + fmt(r.status_since).split(" · ")[0]}</span>
+    <span class="k-m">${esc(floorName(r.floor_id))} · ${esc(TY[r.type] || "")}${window.SH.isSpace(r.type) ? "" : " · " + esc(window.SH.BEDDESC[r.type] || "")}</span><span class="k-m">Last cleaned ${r.last_cleaned ? ago(r.last_cleaned) : "· no record"}</span></button>`).join("")}</div>`;
 }
+function hkInfo(r) {
+  loadEvents(r.id); const sp = window.SH.isSpace(r.type), open = issues.filter((i) => i.room_id === r.id && i.open), ev = evc[r.id] || [];
+  const cleans = ev.filter((e) => e.event === "cleaned").slice(0, 3);
+  return info([
+    r.status === "cleaning" ? ["Started", fmt(r.status_since)] : [sp ? "Requested" : "Guest checked out", fmt(r.status_since)],
+    ["Last cleaned", fmt(r.last_cleaned)],
+    sp ? ["Area", (r.features || []).includes("staff only") ? "🔒 Staff only" : "Guest area"] : ["Prepare", `${esc(window.SH.BEDDESC[r.type] || "")} · sleeps ${r.pax}`],
+    open.length ? ["Known issues", open.map((i) => esc(i.text) + (i.progress === "parts" ? " (waiting for part)" : "")).join(", ")] : null,
+    cleans.length > 1 ? ["Earlier cleanings", cleans.slice(1).map((e) => fmt(e.at).split(" · ")[0] + (who(e.actor) ? " · " + esc(who(e.actor)) : "")).join("<br>")] : null,
+  ]); }
 function hkRoom(r) {
   const plan = window.SH.layoutOf({ ty: r.type, layout: r.layout, features: r.features }) ? `<div class="k-plan">${window.SH.schematic({ ty: r.type, type: r.type, layout: r.layout, features: r.features })}</div>` : "";
-  if (r.status === "dirty") return `<div class="k-room"><div class="k-head"><span class="k-big">${esc(r.number)}</span><span>${esc(floorName(r.floor_id))} · ${esc(TY[r.type] || "")}</span></div>${plan}
+  if (r.status === "dirty") return `<div class="k-room"><div class="k-head"><span class="k-big">${esc(r.number)}</span><span>${esc(floorName(r.floor_id))} · ${esc(TY[r.type] || "")}</span></div>${hkInfo(r)}${plan}
     <button class="k-btn in" data-act="in">I'M IN<small>Start cleaning</small></button></div>`;
-  if (r.status === "cleaning") return `<div class="k-room"><div class="k-head"><span class="k-big">${esc(r.number)}</span><span>Cleaning for ${dur(mins(r.status_since))}</span></div>
+  if (r.status === "cleaning") return `<div class="k-room"><div class="k-head"><span class="k-big">${esc(r.number)}</span><span>${esc(floorName(r.floor_id))} · ${esc(TY[r.type] || "")}</span></div>${hkInfo(r)}
     <p class="k-q">Anything missing or broken?</p><div class="chips k-chips">${ITEMS.map((x) => `<button aria-pressed="false" data-item="${esc(x)}">${esc(x)}</button>`).join("")}</div>
     <input class="k-note" id="kNote" placeholder="Other problem (optional)" maxlength="200">
     <button class="k-btn out" data-act="out">I'M OUT<small>Room is ready</small></button></div>`;
@@ -78,14 +98,26 @@ function mtList() {
   if (!list.length) return `<div class="k-empty"><b>No open issues</b><span>New reports appear here instantly.</span></div>`;
   return `<div class="k-grid">${list.map((i) => { const r = roomOf(i.room_id), occ = r.status === "occupied";
     return `<button class="k-tile mt ${i.progress}" data-issue="${i.id}"><span class="k-n">${esc(r.number)}</span><span class="k-s">${esc(i.text)}</span>
-      <span class="k-m">${PROG[i.progress] || "New"}${i.note && i.progress !== "working" ? " · " + esc(i.note) : ""} · ${occ ? "guest in room" : "room empty"}</span></button>`; }).join("")}</div>`;
+      <span class="k-m">${PROG[i.progress] || "New"}${i.note && i.progress !== "working" ? " · " + esc(i.note) : ""} · ${occ ? "guest in room" : "room empty"}</span>
+      <span class="k-m">Reported ${fmt(i.reported_at).split(" · ")[0]}${who(i.reported_by) ? " · by " + esc(who(i.reported_by)) : ""}</span></button>`; }).join("")}</div>`;
 }
+function mtInfo(i, r) {
+  loadEvents(r.id); const ev = evc[r.id] || [], fixes = ev.filter((e) => e.event === "fixed"), occ = r.status === "occupied";
+  const others = issues.filter((x) => x.room_id === r.id && x.id !== i.id && x.open);
+  return info([
+    ["Reported", fmt(i.reported_at) + (who(i.reported_by) ? " · by " + esc(who(i.reported_by)) : "")],
+    ["Room", occ ? "Guest in room · knock first" : r.status === "cleaning" ? "Housekeeping inside now" : r.status === "dirty" ? "Empty · waiting for cleaning" : "Empty · ready for guests"],
+    i.progress !== "new" ? ["Status", `${PROG[i.progress]}${i.note ? " · " + esc(i.note) : ""}${i.progress_at ? " · " + fmt(i.progress_at) : ""}`] : null,
+    ["Where", `${esc(floorName(r.floor_id))} · ${esc(TY[r.type] || "")}`],
+    others.length ? ["Also open here", others.map((x) => esc(x.text)).join(", ")] : null,
+    fixes.length ? ["Earlier repairs here", `${fixes.length} · last: ${esc(fixes[0].note)} · ${fmt(fixes[0].at).split(" · ")[0]}`] : ["Earlier repairs here", "none recorded"],
+  ]); }
 function mtIssue(i) {
   const r = roomOf(i.room_id), occ = r.status === "occupied";
-  const head = `<div class="k-head"><span class="k-big">${esc(r.number)}</span><span>${esc(i.text)}</span></div>${occ ? `<p class="k-warn">Guest in room · knock first</p>` : ""}`;
-  if (i.progress !== "working") return `<div class="k-room">${head}${i.progress !== "new" ? `<p class="k-q">${PROG[i.progress]}${i.note ? " · " + esc(i.note) : ""}</p>` : ""}
+  const head = `<div class="k-head"><span class="k-big">${esc(r.number)}</span><span>${esc(i.text)}</span></div>${occ ? `<p class="k-warn">Guest in room · knock first</p>` : ""}${screen.k === "mt-out" ? "" : mtInfo(i, r)}`;
+  if (i.progress !== "working") return `<div class="k-room">${head}
     <button class="k-btn in" data-act="mt-in">I'M IN<small>Start the repair</small></button></div>`;
-  if (screen.k !== "mt-out") return `<div class="k-room">${head}<p class="k-q">In the room for ${dur(mins(i.progress_at))}</p>
+  if (screen.k !== "mt-out") return `<div class="k-room">${head}
     <button class="k-btn out" data-act="mt-out">I'M OUT<small>Tell us how it went</small></button></div>`;
   // leaving: an outcome is required
   return `<div class="k-room">${head}<p class="k-q">How did it go?</p>

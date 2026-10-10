@@ -69,7 +69,7 @@
 
   // ───────────────────────── Demo (in the browser) ─────────────────────────
   function DemoBackend() {
-    const KEY = "frontdesk-demo-v2", HID = "demo-hotel", ME = { id: "demo-user", email: "demo@example.com" };
+    const KEY = "frontdesk-demo-v3", HID = "demo-hotel", ME = { id: "demo-user", email: "demo@example.com" };
     const bc = "BroadcastChannel" in window ? new BroadcastChannel("frontdesk-demo") : null;
     let listeners = [], role = "owner";
     try { role = localStorage.getItem(KEY + "-role") || "owner"; } catch (e) {}
@@ -83,28 +83,30 @@
 
     function seed() {
       const t = (m) => new Date(Date.now() - m * 60000).toISOString();
-      const BEDS = { sgl: 1, dbl: 1, twn: 2, tpl: 3, fam: 3, ste: 2, stu: 1, ap1: 2, ap2: 3, ap3: 5 }, PAX = { sgl: 1, dbl: 2, twn: 2, tpl: 3, fam: 4, ste: 4, stu: 2, ap1: 4, ap2: 5, ap3: 8 };
+      const BEDS = { sgl: 1, dbl: 1, twn: 2, tpl: 3, fam: 3, ste: 2, stu: 1, ap1: 2, ap2: 3, ap3: 5, rest: 0, kit: 0, gym: 0, laun: 0 }, PAX = { sgl: 1, dbl: 2, twn: 2, tpl: 3, fam: 4, ste: 4, stu: 2, ap1: 4, ap2: 5, ap3: 8, rest: 1, kit: 1, gym: 1, laun: 1 };
+      const SPACE_NO = { rest: "REST", kit: "KITCHEN", gym: "GYM", laun: "LAUNDRY" };
       const floors = [0, 1, 2, 3].map((l) => ({ id: "f" + l, hotel_id: HID, level: l, name: l === 0 ? "Ground floor" : l === 3 ? "Floor 3 · Apartments" : "Floor " + l }));
-      const types = { 0: ["dbl", "twn", "sgl", "tpl"], 1: ["dbl", "twn", "tpl", "dbl", "fam", "ste", "sgl", "twn", "dbl", "tpl", "sgl", "ste"] };
+      const types = { 0: ["dbl", "twn", "sgl", "tpl", "rest", "kit", "gym", "laun"], 1: ["dbl", "twn", "tpl", "dbl", "fam", "ste", "sgl", "twn", "dbl", "tpl", "sgl", "ste"] };
       types[2] = types[1]; types[3] = ["ap2", "stu", "ap1", "ap3", "ap1", "stu"];
       const plan = { "01": "free", "02": "occupied", "03": "occupied", "04": "free", "101": "free", "102": "occupied", "103": "occupied", "104": "dirty", "105": "free", "106": "occupied", "107": "cleaning", "108": "free", "109": "occupied", "110": "dirty", "111": "occupied", "112": "free", "301": "free", "302": "occupied", "303": "dirty", "304": "free", "305": "occupied", "306": "free" };
       const names = ["Ana M.", "Marko P.", "J. Smith", "Ivana K.", "L. Rossi", "Nikola S.", "M. Weber", "Sara D.", "T. Novak", "Elena R.", "K. Tanaka", "D. Horvat"];
       const rooms = [], events = [];
       floors.forEach((f) => types[f.level].forEach((ty, i) => {
-        const n = f.level === 0 ? "0" + (i + 1) : String(f.level * 100 + i + 1), half = Math.ceil(types[f.level].length / 2), top = i < half, pos = i % half;
+        const n = SPACE_NO[ty] || (f.level === 0 ? "0" + (i + 1) : String(f.level * 100 + i + 1)), half = Math.ceil(types[f.level].length / 2), top = i < half, pos = i % half;
         const feat = [];
         if (f.level > 0 && top) feat.push("balcony");
         if (/^(stu|ap)/.test(ty)) feat.push("kitchen");
+        if (ty === "kit" || ty === "laun") feat.push("staff only");
         if (ty === "ste" || ty === "fam") feat.push("bathtub");
         if (["01", "101", "201"].includes(n)) feat.push("accessible");
         if (["102", "103", "202", "203"].includes(n)) feat.push("connecting");
         if (f.level > 0 && (pos === 0 || pos === half - 1)) feat.push("quiet");
         if (f.level > 0 && (pos === 2 || pos === 3)) feat.push("near lift");
-        const st = plan[n] || "occupied", k = rooms.length, lc = t(30 + ((k * 97) % 900)), since = st === "free" ? lc : t(10 + ((k * 37) % 400));
+        const st = SPACE_NO[ty] ? (ty === "gym" ? "dirty" : "free") : plan[n] || "occupied", k = rooms.length, lc = t(30 + ((k * 97) % 900)), since = st === "free" ? lc : t(10 + ((k * 37) % 400));
         const id = "r" + n;
         rooms.push({ id, hotel_id: HID, floor_id: f.id, number: n, position: i, type: ty, beds: BEDS[ty], pax: PAX[ty],
-          view: f.level === 0 ? (top ? "garden" : "courtyard") : top ? "sea" : "city", features: feat,
-          status: st, guest: st === "occupied" ? names[k % names.length] : "", last_cleaned: lc, status_since: since, updated_at: since });
+          view: SPACE_NO[ty] ? "" : f.level === 0 ? (top ? "garden" : "courtyard") : top ? "sea" : "city", features: feat,
+          status: st, guest: st === "occupied" && !SPACE_NO[ty] ? names[k % names.length] : "", last_cleaned: lc, status_since: since, updated_at: since });
         events.push({ id: events.length + 1, hotel_id: HID, room_id: id, event: "cleaned", note: "", actor: null, at: lc });
         if (st !== "free") events.push({ id: events.length + 1, hotel_id: HID, room_id: id, event: st === "occupied" ? "checkin" : st === "dirty" ? "checkout" : "start", note: "", actor: null, at: since });
       }));
@@ -181,6 +183,9 @@
   }
 
   const c = window.APP_CONFIG || {};
+  // ?demo in the address opens the sample hotel even on the live site (for showing hotels a demo without an account)
+  const forceDemo = /[?&]demo\b/.test(location.search);
+  if (forceDemo) { window.api = DemoBackend(); return; }
   if (c.SUPABASE_URL && c.SUPABASE_ANON_KEY && !window.supabase) {
     document.addEventListener("DOMContentLoaded", () => { document.body.innerHTML = '<p style="padding:24px;font:16px system-ui">Could not load the sign-in library. Check the internet connection and reload.</p>'; });
   }

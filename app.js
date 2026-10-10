@@ -8,7 +8,13 @@ const api = window.api;
 // ───────────── vocabulary ─────────────
 const { TY, BEDS, PAX, BEDDESC, BEDROOMS } = window.SH;
 const VIEWS = ["", "sea", "city", "garden", "courtyard", "mountain", "pool"];
-const FEATURES = ["balcony", "bathtub", "kitchen", "accessible", "connecting", "quiet", "near lift"];
+const FEATURES = ["balcony", "bathtub", "kitchen", "accessible", "connecting", "quiet", "near lift", "staff only"];
+const isSpace = (id) => ROOMS[id] && SH.isSpace(ROOMS[id].ty);
+const staffOnly = (R) => R.feat.has("staff only");
+// type <select> with guest rooms and other spaces in separate groups
+const typeOpts = (v, blank) => (blank ? `<option value="">${blank}</option>` : "") +
+  `<optgroup label="Guest rooms">${Object.keys(TY).filter((k) => !SH.isSpace(k)).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${TY[k]}</option>`).join("")}</optgroup>` +
+  `<optgroup label="Other spaces">${Object.keys(SH.SPACES).map((k) => `<option value="${k}" ${k === v ? "selected" : ""}>${TY[k]}</option>`).join("")}</optgroup>`;
 const STATUS = { free: "Free", occupied: "Occupied", dirty: "To clean", cleaning: "Cleaning" };
 const EV = { mt_in: "Maintenance went in", mt_out: "Maintenance left", checkin: "Check-in", checkout: "Check-out", start: "Cleaning started", cleaned: "Cleaned", issue: "Issue reported", fixed: "Fixed", status: "Status changed" };
 const ROLE = { owner: "Owner", desk: "Front desk", hk: "Housekeeping", mt: "Maintenance" };
@@ -58,8 +64,10 @@ const who = (uid) => { if (!uid) return ""; const m = members[uid]; return m ? m
 
 // ───────────── stats ─────────────
 function stats(l) { const c = { total: 0, free: 0, occupied: 0, dirty: 0, cleaning: 0, issueRooms: 0, blocking: 0 };
-  roomsOf(l).forEach((id) => { const r = rec(id); c.total++; c[r.status]++; if (openIss(id).length) { c.issueRooms++; if (r.status !== "occupied") c.blocking++; } }); return c; }
-const readyList = (l) => roomsOf(l).filter((id) => rec(id).status === "free").sort((a, b) => (openIss(a).length > 0) - (openIss(b).length > 0) || new Date(rec(b).last_cleaned || 0) - new Date(rec(a).last_cleaned || 0));
+  roomsOf(l).forEach((id) => { const r = rec(id), sp = isSpace(id);
+    if (!sp) { c.total++; c[r.status]++; } else if (r.status === "dirty" || r.status === "cleaning") c[r.status]++;
+    if (openIss(id).length) { c.issueRooms++; if (!sp && r.status !== "occupied") c.blocking++; } }); return c; }
+const readyList = (l) => roomsOf(l).filter((id) => !isSpace(id) && rec(id).status === "free").sort((a, b) => (openIss(a).length > 0) - (openIss(b).length > 0) || new Date(rec(b).last_cleaned || 0) - new Date(rec(a).last_cleaned || 0));
 const bestRoom = () => readyList(null).filter((id) => !openIss(id).length)[0] || null;
 const queue = (l) => roomsOf(l).filter((id) => ["dirty", "cleaning"].includes(rec(id).status)).sort((a, b) => new Date(since(a) || 0) - new Date(since(b) || 0));
 function issueList(l) { const out = []; issues.filter((i) => i.open && ROOMS[i.room_id] && (l == null || ROOMS[i.room_id].floor === l)).forEach((i) => out.push({ id: i.room_id, i }));
@@ -105,7 +113,7 @@ function buildWorld() {
   FLOORS.forEach((f, i) => { const L = layout(f);
     h += `<div class="fl ${i === FLOORS.length - 1 ? "topfloor" : ""}" data-floor="${f.id}"><div class="top"><div class="corr"><span class="exit l">EXIT</span><span class="exit r">EXIT</span></div>` +
       L.areas.map((a) => `<div class="area" style="left:${a.x}px;top:${a.y}px;width:${a.w}px;height:${a.h}px">${a.k}</div>`).join("") +
-      L.rooms.map((r) => `<div class="tile" id="t-${r.id}" data-room="${r.id}" role="button" tabindex="-1" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px"><span class="best">NEXT</span><span class="wr">${WR}</span><b class="num">${esc(ROOMS[r.id].n)}</b><span class="sub"></span><i class="door ${r.d}"></i></div>`).join("") +
+      L.rooms.map((r) => `<div class="tile${r.w < 90 ? " narrow" : ""}" id="t-${r.id}" data-room="${r.id}" role="button" tabindex="-1" style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;--fs:${Math.round(Math.min(42, r.w * 0.34, (r.w * 1.12) / Math.max(3, ROOMS[r.id].n.length)))}px"><span class="best">NEXT</span><span class="wr">${WR}</span><b class="num">${esc(ROOMS[r.id].n)}</b><span class="sub"></span><i class="door ${r.d}"></i></div>`).join("") +
       `</div><div class="front" role="button" tabindex="0" aria-label="${esc(floorName(f.id))}"><div class="la"><b>${esc(floorName(f.id))}</b><span></span></div><div class="lb"></div><div class="lc"></div></div></div>`; });
   $("world").innerHTML = h;
   document.querySelectorAll(".front").forEach((el) => { const id = +el.parentNode.dataset.floor; el.onclick = () => { if (mode === "building") openFloor(id); }; el.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openFloor(id); } }; });
@@ -120,8 +128,8 @@ function updateWorld() {
     lb.classList.toggle("on", cl > 0); lb.textContent = `${cl} ${cl === 1 ? "room" : "rooms"} to clean`;
     lc.classList.toggle("on", c.issueRooms > 0); lc.textContent = `${c.issueRooms} ${c.issueRooms === 1 ? "room needs" : "rooms need"} repair`;
     f.rooms.forEach((id) => { const r = rec(id), st = r.status, tile = $("t-" + id); if (!tile) return;
-      tile.className = `tile s-${st}${openIss(id).length ? " has-issue" : ""}${openIss(id).some((i) => i.progress === "working") ? " mt-in" : ""}${SH.isApt(ROOMS[id].ty) ? " apt" : ""}${sel === id ? " sel" : ""}${best === id ? " is-best" : ""}`;
-      tile.querySelector(".sub").textContent = st === "occupied" ? r.guest || "Occupied" : st === "free" ? "✓ " + short(r.last_cleaned) : st === "dirty" ? "Wait " + short(r.status_since) : "Cleaning";
+      tile.className = `tile${tile.classList.contains("narrow") ? " narrow" : ""}${isSpace(id) ? " space" : ""}${staffOnly(ROOMS[id]) ? " staff" : ""} s-${st}${openIss(id).length ? " has-issue" : ""}${openIss(id).some((i) => i.progress === "working") ? " mt-in" : ""}${SH.isApt(ROOMS[id].ty) ? " apt" : ""}${sel === id ? " sel" : ""}${best === id ? " is-best" : ""}`;
+      tile.querySelector(".sub").textContent = isSpace(id) ? (st === "dirty" ? "Needs cleaning" : st === "cleaning" ? "Cleaning" : TY[ROOMS[id].ty]) : st === "occupied" ? r.guest || "Occupied" : st === "free" ? "✓ " + short(r.last_cleaned) : st === "dirty" ? "Wait " + short(r.status_since) : "Cleaning";
       tile.setAttribute("aria-label", `Room ${ROOMS[id].n}, ${STATUS[st]}`); tile.tabIndex = mode === "floor" ? 0 : -1; }); });
 }
 function camera() {
@@ -152,7 +160,7 @@ function buildHolo() {
 }
 function sizeHolo() {
   const st = $("stage"), sw = st.clientWidth, sh = st.clientHeight, n = Math.max(FLOORS.length, 1), wide = window.innerWidth >= 900, hv = $("holo");
-  const fh = Math.max(26, Math.min(70, (sh * 0.5) / (n + 1.2))), w = Math.min(fh * 5, sw * (wide ? 0.36 : 0.56));
+  const fh = Math.max(8, Math.min(70, (sh * 0.55) / (n + 1.2))), w = Math.min(Math.max(fh * 5, 170), sw * (wide ? 0.36 : 0.56));
   hv.style.setProperty("--FH", fh + "px"); hv.style.setProperty("--W", w + "px"); hv.style.setProperty("--D", w * 0.55 + "px");
   hv.style.setProperty("--cx", wide ? "42%" : "50%"); hv.style.setProperty("--cy", (sh * 0.6) + "px");
   requestAnimationFrame(holoLabels);
@@ -165,7 +173,15 @@ function updateHolo() {
 }
 function holoLabels() {
   const box = document.querySelector("#holo .h-labels"), svg = document.querySelector("#holo .h-lines"); if (!box) return;
+  const fl = $("floorList"); fl.innerHTML = [...FLOORS].reverse().map((f) => { const c = stats(f.id); return `<button class="callout ${!c.total ? "none" : c.free ? "" : "full"}" style="position:static;transform:none;width:100%" data-floor="${f.id}"><b>${esc(floorName(f.id))}</b><div class="row"><span class="c-free">● ${c.free} free</span><span class="c-occ">● ${c.occupied} occ</span>${c.dirty + c.cleaning ? `<span class="c-clean">● ${c.dirty + c.cleaning} clean</span>` : ""}${c.issueRooms ? `<span class="c-issue">● ${c.issueRooms} fix</span>` : ""}</div></button>`; }).join("");
+  fl.querySelectorAll("[data-floor]").forEach((b) => b.onclick = () => openFloor(+b.dataset.floor));
   const wide = window.innerWidth >= 900; if (!wide || mode !== "building") { box.innerHTML = ""; svg.innerHTML = ""; return; }
+  if (FLOORS.length > 10) { // tall building: a scrollable floor column instead of callouts
+    svg.innerHTML = ""; box.innerHTML = `<div class="h-col">${[...FLOORS].reverse().map((f) => { const c = stats(f.id), cls = !c.total ? "none" : c.free ? "" : "full";
+      return `<button class="hc ${cls}" data-floor="${f.id}"><b>${esc(floorShort(f.id))}</b><span>${!c.total ? "no rooms" : c.free ? c.free + " free" : "full"}</span>${c.dirty + c.cleaning ? `<i class="c-clean">●</i>` : ""}${c.issueRooms ? `<i class="c-issue">●</i>` : ""}</button>`; }).join("")}</div>`;
+    box.querySelectorAll("[data-floor]").forEach((b) => { const fl = () => document.querySelector(`.h-fl[data-floor="${b.dataset.floor}"]`);
+      b.onclick = () => openFloor(+b.dataset.floor); b.onmouseenter = () => fl() && fl().classList.add("hl"); b.onmouseleave = () => fl() && fl().classList.remove("hl"); });
+    return; }
   const sr = $("stage").getBoundingClientRect(), hv = getComputedStyle($("holo")), w = parseFloat(hv.getPropertyValue("--W")), d = parseFloat(hv.getPropertyValue("--D"));
   let html = "", lines = "";
   FLOORS.slice().reverse().forEach((f) => { const m = document.querySelector(`.h-fl[data-floor="${f.id}"] .h-mark`); if (!m) return; const r = m.getBoundingClientRect(), c = stats(f.id);
@@ -176,8 +192,6 @@ function holoLabels() {
   box.innerHTML = html; svg.innerHTML = lines;
   box.querySelectorAll("[data-floor]").forEach((b) => { const fl = () => document.querySelector(`.h-fl[data-floor="${b.dataset.floor}"]`);
     b.onclick = () => openFloor(+b.dataset.floor); b.onmouseenter = () => fl() && fl().classList.add("hl"); b.onmouseleave = () => fl() && fl().classList.remove("hl"); });
-  const fl = $("floorList"); fl.innerHTML = [...FLOORS].reverse().map((f) => { const c = stats(f.id); return `<button class="callout ${!c.total ? "none" : c.free ? "" : "full"}" style="position:static;transform:none;width:100%" data-floor="${f.id}"><b>${esc(floorName(f.id))}</b><div class="row"><span class="c-free">● ${c.free} free</span><span class="c-occ">● ${c.occupied} occ</span>${c.dirty + c.cleaning ? `<span class="c-clean">● ${c.dirty + c.cleaning} clean</span>` : ""}${c.issueRooms ? `<span class="c-issue">● ${c.issueRooms} fix</span>` : ""}</div></button>`; }).join("");
-  fl.querySelectorAll("[data-floor]").forEach((b) => b.onclick = () => openFloor(+b.dataset.floor));
 }
 function openFloor(id) { floor = id; mode = "floor"; sel = null; render(); }
 function toBuilding() { mode = "building"; sel = null; render(); }
@@ -194,10 +208,19 @@ const li = (id, sub, tag, cls) => `<li><button data-go="${id}"><span class="rn $
 function floorHtml(l) { const c = stats(l), rl = readyList(l), q = queue(l), iss = issueList(l);
   return `<h2>${esc(floorName(l))}</h2>
   <div class="fstats"><div><b class="c-free">${c.free}</b><small>free</small></div><div><b class="c-occ">${c.occupied}</b><small>occupied</small></div><div><b class="c-clean">${c.dirty + c.cleaning}</b><small>to clean</small></div><div><b class="c-issue">${c.issueRooms}</b><small>repairs</small></div></div>
-  <div class="sec"><h4>Ready for guests · freshest first</h4>${rl.length ? `<ul class="list">${rl.map((id) => li(id, `✓ cleaned ${ago(rec(id).last_cleaned)} · ${TY[ROOMS[id].ty]}`, openIss(id).length ? `<span class="c-issue">⚠ issue</span>` : "", "c-free")).join("")}</ul>` : `<p class="empty">No free rooms on this floor.</p>`}</div>
+  <div class="sec"><h4>Ready for guests · freshest first</h4>${rl.length ? `<ul class="list">${rl.map((id) => li(id, `${rec(id).last_cleaned ? "✓ cleaned " + ago(rec(id).last_cleaned) : "new · no cleaning yet"} · ${TY[ROOMS[id].ty]}`, openIss(id).length ? `<span class="c-issue">⚠ issue</span>` : "", "c-free")).join("")}</ul>` : `<p class="empty">No free rooms on this floor.</p>`}</div>
   <div class="sec"><h4>Cleaning queue · longest wait first</h4>${q.length ? `<ul class="list">${q.map((id) => li(id, rec(id).status === "cleaning" ? `Started ${ago(since(id))}` : `Waiting ${durOf(since(id))}`, rec(id).status === "cleaning" ? "In progress" : "", "c-clean")).join("")}</ul>` : `<p class="empty">Nothing waiting.</p>`}</div>
   <div class="sec"><h4>Repairs · empty rooms first</h4>${iss.length ? `<ul class="list">${iss.map(({ id, i }) => li(id, `${esc(i.text)} · ${ago(i.reported_at)}`, rec(id).status === "occupied" ? "Guest in room" : "", "c-issue")).join("")}</ul>` : `<p class="empty">All working.</p>`}</div>`; }
-function roomHtml(id) { const r = rec(id), st = r.status, R = ROOMS[id], oi = openIss(id), s = r.status_since;
+function spaceHtml(id) { const r = rec(id), st = r.status, R = ROOMS[id], s = r.status_since, so = staffOnly(R);
+  const iss = issues.filter((i) => i.room_id === id).sort((a, b) => b.open - a.open || new Date(b.reported_at) - new Date(a.reported_at)).slice(0, 6), ev = evCache[id];
+  const v = st === "dirty" ? ["wait", "NEEDS CLEANING", `Requested ${ago(s)}`] : st === "cleaning" ? ["soon", "BEING CLEANED", `Started ${ago(s)}`] : ["space", so ? "STAFF ONLY" : "GUEST AREA", `Last cleaned ${ago(r.last_cleaned)}`];
+  const a = st === "dirty" ? `<button class="big b-cleaning" data-do="start">Start cleaning</button>` : st === "cleaning" ? `<button class="big b-free" data-do="cleaned">Cleaned</button>` : `<button class="big b-dirty" data-do="request">Request cleaning</button>`;
+  return `<div class="rt"><h3 style="font-size:${R.n.length > 5 ? 30 : 44}px">${esc(R.n)}</h3><span class="meta">${TY[R.ty]} · ${esc(floorName(R.floor))}</span><button class="small x" id="closeRoom" aria-label="Back to floor">✕</button></div>
+   <div class="verdict v-${v[0]}">${so ? "🔒 " : ""}${v[1]}<small>${v[2]}</small></div>${a}
+   <div class="sec"><h4>Issues here</h4>${iss.map((i) => `<div class="issue ${i.open ? "" : "done"}"><span>${esc(i.text)} <small style="color:var(--muted)">${ago(i.reported_at)}</small>${i.open && PROG[i.progress] ? `<br><small class="prog p-${i.progress}">${PROG[i.progress]}${i.note && i.progress !== "working" ? " · " + esc(i.note) : ""}</small>` : ""}</span>${i.open ? `<button class="small" data-fix="${i.id}">Fixed</button>` : ""}</div>`).join("")}
+    <div class="field"><input id="issueTxt" placeholder="Report an issue" autocomplete="off" maxlength="300"><button class="small" data-do="issue">Add</button></div></div>
+   <div class="sec"><details><summary>History${ev ? ` (${ev.length})` : ""}</summary>${ev ? `<ul class="hist">${ev.map((h) => `<li><time>${ago(h.at)}</time><span>${EV[h.event] || esc(h.event)}${h.note ? `: ${esc(h.note)}` : ""}</span></li>`).join("")}</ul>` : `<p class="empty">Loading…</p>`}</details></div>`; }
+function roomHtml(id) { if (isSpace(id)) return spaceHtml(id); const r = rec(id), st = r.status, R = ROOMS[id], oi = openIss(id), s = r.status_since;
   let v;
   if (st === "free" && !oi.length) v = ["yes", "READY TO SELL", `Cleaned ${ago(r.last_cleaned)}`];
   else if (st === "free") v = ["warn", "FREE, BUT HAS AN ISSUE", oi.map((i) => esc(i.text)).join(", ")];
@@ -246,13 +269,20 @@ function setupHtml() {
    <div><label for="qbHigh">Highest floor</label><input id="qbHigh" type="number" min="0" max="60" value="3"></div>
    <div><label for="qbPer">Rooms per floor</label><input id="qbPer" type="number" min="0" max="60" value="12"></div>
    <div><label for="qbG">Rooms on ground floor</label><input id="qbG" type="number" min="0" max="60" value="0"></div>
-   <div><label for="qbType">Default type</label><select id="qbType">${opt(Object.keys(TY), "dbl", (k) => TY[k])}</select></div>
+   <div><label for="qbType">Default type</label><select id="qbType">${typeOpts("dbl")}</select></div>
    <div style="flex:0 0 auto"><button class="big b-hud" id="qbGo" style="margin:0;padding:11px 18px;font-size:15px">Generate</button></div></div></div>` +
-   draft.map((f, fi) => `<div class="blk"><div class="row" style="align-items:center;margin-bottom:10px"><div style="flex:0 0 90px"><label>Level</label><input value="${f.level}" type="number" data-fl="${fi}" data-k="level"></div><div><label>Floor name</label><input value="${esc(f.name)}" data-fl="${fi}" data-k="name"></div><div style="flex:0 0 auto;align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="small" data-addroom="${fi}">+ Room</button>${draft.some((g) => g.level > f.level) ? `<button class="small" data-copyup="${fi}" title="Same room types, views and features on every floor above, renumbered">Copy to floors above</button>` : ""}<button class="small" data-delfloor="${fi}">Remove floor</button></div></div>
+   `<div class="blk"><h2>Rules for many rooms</h2><p class="meta" style="margin-bottom:12px">One line changes every matching room on every floor. Example: numbers ending in <b>01, 25</b> → Suite, sea view. Or <b>odd numbers</b> → sea view, <b>even</b> → city view.</p>
+    <div class="row"><div><label for="ruMode">Rooms</label><select id="ruMode"><option value="end">with numbers ending in</option><option value="odd">with odd numbers</option><option value="even">with even numbers</option><option value="range">numbered from–to</option><option value="floors">on floors</option></select></div>
+     <div><label for="ruVal">Value</label><input id="ruVal" placeholder="01, 25   ·   101-120   ·   2-5"></div>
+     <div><label for="ruType">Set type</label><select id="ruType">${typeOpts("", "keep")}</select></div>
+     <div><label for="ruView">Set view</label><select id="ruView"><option value="__">keep</option>${opt(VIEWS, "__", (x) => x || "no view")}</select></div>
+     <div><label for="ruFeat">Feature</label><select id="ruFeat"><option value="">keep</option>${FEATURES.map((f) => `<option value="+${f}">+ ${f}</option><option value="-${f}">− ${f}</option>`).join("")}</select></div>
+     <div style="flex:0 0 auto"><button class="big b-hud" id="ruGo" style="margin:0;padding:11px 18px;font-size:15px">Apply</button></div></div></div>` +
+   draft.map((f, fi) => `<div class="blk"><div class="row" style="align-items:center;margin-bottom:10px"><div style="flex:0 0 90px"><label>Level</label><input value="${f.level}" type="number" data-fl="${fi}" data-k="level"></div><div><label>Floor name</label><input value="${esc(f.name)}" data-fl="${fi}" data-k="name"></div><div style="flex:0 0 auto;align-self:end;display:flex;gap:6px;flex-wrap:wrap"><button class="small" data-addroom="${fi}">+ Room</button><select class="small addsp" data-addspace="${fi}" aria-label="Add a space"><option value="">+ Space…</option>${Object.keys(SH.SPACES).map((k) => `<option value="${k}">${TY[k]}</option>`).join("")}</select>${draft.some((g) => g.level > f.level) ? `<button class="small" data-copyup="${fi}" title="Same room types, views and features on every floor above, renumbered">Copy to floors above</button>` : ""}<button class="small" data-delfloor="${fi}">Remove floor</button></div></div>
     <div class="tablewrap"><table class="rtab"><thead><tr><th><input type="checkbox" data-selfloor="${fi}" aria-label="Select all rooms on this floor" ${f.rooms.length && f.rooms.every((_, ri) => sel.has(fi + ":" + ri)) ? "checked" : ""}></th><th>Room</th><th>Type</th><th>Beds</th><th>Sleeps</th><th>View</th><th>Features</th><th></th></tr></thead><tbody>${f.rooms.map((r, ri) => `<tr class="${sel.has(fi + ":" + ri) ? "picked" : ""}">
      <td><input type="checkbox" data-sel="${fi}:${ri}" aria-label="Select room ${esc(r.number)}" ${sel.has(fi + ":" + ri) ? "checked" : ""}></td>
      <td class="num"><input value="${esc(r.number)}" data-fl="${fi}" data-ri="${ri}" data-k="number" aria-label="Room number"></td>
-     <td><select data-fl="${fi}" data-ri="${ri}" data-k="type" aria-label="Type">${opt(Object.keys(TY), r.type, (k) => TY[k])}</select></td>
+     <td><select data-fl="${fi}" data-ri="${ri}" data-k="type" aria-label="Type">${typeOpts(r.type)}</select></td>
      <td class="n2"><input type="number" min="0" max="12" value="${r.beds}" data-fl="${fi}" data-ri="${ri}" data-k="beds" aria-label="Beds"></td>
      <td class="n2"><input type="number" min="1" max="16" value="${r.pax}" data-fl="${fi}" data-ri="${ri}" data-k="pax" aria-label="Sleeps"></td>
      <td><select data-fl="${fi}" data-ri="${ri}" data-k="view" aria-label="View">${opt(VIEWS, r.view, (x) => x || "–")}</select></td>
@@ -260,14 +290,29 @@ function setupHtml() {
      <td><button class="small" data-delroom="${fi}:${ri}" aria-label="Remove room">✕</button></td></tr>`).join("")}</tbody></table></div></div>`).join("") +
    `<div class="row" style="margin-bottom:30px"><button class="small" id="addFloor">+ Floor</button><div></div><button class="big b-free" id="saveSetup" style="flex:0 0 auto;margin:0;padding:14px 26px">Save setup</button></div><div class="err" id="setupErr"></div>` +
    (sel.size ? `<div class="bulk hud"><b>${sel.size} selected</b>
-     <select id="bkType" aria-label="Set type"><option value="">Type…</option>${opt(Object.keys(TY), "", (k) => TY[k])}</select>
+     <select id="bkType" aria-label="Set type">${typeOpts("", "Type…")}</select>
      <select id="bkView" aria-label="Set view"><option value="__">View…</option>${opt(VIEWS, "__", (x) => x || "no view")}</select>
      <select id="bkFeat" aria-label="Feature"><option value="">Feature…</option>${FEATURES.map((f) => `<option value="+${f}">+ ${f}</option><option value="-${f}">− ${f}</option>`).join("")}</select>
      <button class="small b-hud" id="bkApply">Apply</button><button class="small" id="bkClear">Clear</button></div>` : "");
 }
 let setupSel = new Set();
+function applyType(r, t) { r.type = t; r.beds = BEDS[t]; r.pax = PAX[t]; r.layout = null;
+  if (SH.isApt(t) && !r.features.includes("kitchen")) r.features = [...r.features, "kitchen"];
+  if (SH.STAFF_ONLY.has(t) && !r.features.includes("staff only")) r.features = [...r.features, "staff only"];
+  if (SH.isSpace(t)) r.view = r.view || ""; }
+// rule tool: one line changes hundreds of rooms
+function ruleMatch(r, mode, val) { const n = parseInt(r.number.replace(/\D/g, ""), 10), end = r.number.slice(-2);
+  if (mode === "end") return val.split(/[,\s]+/).filter(Boolean).some((x) => r.number.endsWith(x.padStart(Math.min(2, r.number.length), "0")) || r.number.endsWith(x));
+  if (mode === "odd") return n % 2 === 1; if (mode === "even") return n % 2 === 0;
+  if (mode === "range") { const m = val.match(/(\d+)\s*[-–]\s*(\d+)/); return m ? n >= +m[1] && n <= +m[2] : false; }
+  if (mode === "floors") { const m = val.match(/(-?\d+)\s*[-–]\s*(-?\d+)/), lv = r._level; return m ? lv >= +m[1] && lv <= +m[2] : val.split(/[,\s]+/).map(Number).includes(lv); }
+  return false; }
 // ── spreadsheet import: understands headers in English/Serbian and hotel shorthand ──
 function typeFromText(t) { t = (t || "").toLowerCase();
+  const sp = [["conf", /conferen|konferen|congress|ballroom/], ["meet", /meeting|sastan|boardroom/], ["rest", /restaurant|restoran|dining/], ["bar", /^\s*(lobby )?bar\b|kafić|kafic/], ["kit", /^\s*(main |hotel )?(kitchen|kuhinja)\s*$/],
+    ["spa", /\bspa\b|wellness|sauna/], ["gym", /\bgym\b|fitness|teretan/], ["pool", /\bpool\b|bazen/], ["laun", /laundr|vešeraj|veseraj|perionic/], ["stor", /storage|magacin|ostava|linen/],
+    ["staff", /staff room|osoblje|garderob/], ["office", /office|kancelar/], ["tech", /technical|boiler|kotlarn|server|tehni/], ["lobby", /^\s*lobby\s*$|^\s*lobi\s*$/], ["wc", /^\s*(public )?(wc|toilet|restroom)\s*$/], ["park", /parking|garaž|garaz/]];
+  for (const [k, re] of sp) if (re.test(t)) return k;
   const br = t.match(/(\d)\s*-?\s*(br|bed\s*room|bedroom|bdr|spava)/); if (br) return ["", "ap1", "ap2", "ap3"][Math.min(3, +br[1])] || "ap1";
   if (/studio/.test(t)) return "stu"; if (/one[- ]bed|1br/.test(t)) return "ap1"; if (/two[- ]bed|2br/.test(t)) return "ap2"; if (/three[- ]bed|3br/.test(t)) return "ap3";
   if (/apart|apt|flat|stan/.test(t)) return "ap1"; if (/suite|ste|apartman/.test(t)) return "ste"; if (/famil|fam|porodi/.test(t)) return "fam";
@@ -296,7 +341,8 @@ function importRooms(text) {
     const pax = col.pax !== undefined && /\d/.test(r[col.pax] || "") ? parseInt(r[col.pax], 10) : PAX[type];
     const vtxt = (col.view !== undefined ? r[col.view] : all).toLowerCase(), view = Object.keys(VIEW_WORDS).find((v) => VIEW_WORDS[v].test(vtxt)) || "";
     const ftxt = (col.feat !== undefined ? r[col.feat] + " " + (col.type !== undefined ? r[col.type] : "") : all).toLowerCase();
-    const features = Object.keys(FEAT_WORDS).filter((f) => FEAT_WORDS[f].test(ftxt)); if (SH.isApt(type) && !features.includes("kitchen")) features.push("kitchen");
+    const features = SH.isSpace(type) ? [] : Object.keys(FEAT_WORDS).filter((f) => FEAT_WORDS[f].test(ftxt)); if (SH.isApt(type) && !features.includes("kitchen")) features.push("kitchen");
+    if (SH.STAFF_ONLY.has(type) || /staff only|samo osoblje|zabranjen/.test(all)) features.push("staff only");
     (byLevel[level] = byLevel[level] || []).push({ number, type, beds: Math.max(0, Math.min(12, beds || 0)), pax: Math.max(1, Math.min(16, pax || 1)), view, features, layout: null });
   });
   const floorsOut = Object.keys(byLevel).map(Number).sort((a, b) => a - b).map((l) => ({ level: l, name: l === 0 ? "Ground floor" : "Floor " + l,
@@ -308,7 +354,7 @@ function bindSetup(root) {
   root.querySelectorAll("[data-k]").forEach((el) => el.onchange = () => { const f = D()[+el.dataset.fl], k = el.dataset.k;
     if (el.dataset.ri === undefined) { f[k] = k === "level" ? parseInt(el.value || "0", 10) : el.value; return; }
     const r = f.rooms[+el.dataset.ri]; r[k] = k === "beds" || k === "pax" ? parseInt(el.value || "0", 10) : el.value.trim();
-    if (k === "type") { r.beds = BEDS[r.type]; r.pax = PAX[r.type]; r.layout = null; if (SH.isApt(r.type) && !r.features.includes("kitchen")) r.features = [...r.features, "kitchen"]; renderSetup(); } });
+    if (k === "type") { applyType(r, r.type); renderSetup(); } });
   root.querySelectorAll("[data-feat]").forEach((el) => el.onchange = () => { const r = D()[+el.dataset.fl].rooms[+el.dataset.ri], ft = el.dataset.feat; r.features = el.checked ? [...new Set([...r.features, ft])] : r.features.filter((x) => x !== ft); });
   root.querySelectorAll("[data-addroom]").forEach((b) => b.onclick = () => { const f = D()[+b.dataset.addroom], last = f.rooms[f.rooms.length - 1]; const next = last && /^\d+$/.test(last.number) ? String(+last.number + 1).padStart(last.number.length, "0") : (f.level === 0 ? "0" : f.level) + String(f.rooms.length + 1).padStart(2, "0"); f.rooms.push({ number: next, type: "dbl", beds: 1, pax: 2, view: "", features: [] }); renderSetup(); });
   root.querySelectorAll("[data-delroom]").forEach((b) => b.onclick = () => { const [fi, ri] = b.dataset.delroom.split(":").map(Number); D()[fi].rooms.splice(ri, 1); setupSel = new Set(); renderSetup(); });
@@ -336,10 +382,19 @@ function bindSetup(root) {
   root.querySelectorAll("[data-selfloor]").forEach((c) => c.onchange = () => { const fi = +c.dataset.selfloor; D()[fi].rooms.forEach((_, ri) => c.checked ? setupSel.add(fi + ":" + ri) : setupSel.delete(fi + ":" + ri)); renderSetup(); });
   const bk = $("bkApply"); if (bk) bk.onclick = () => { const t = $("bkType").value, v = $("bkView").value, ft = $("bkFeat").value;
     setupSel.forEach((k) => { const [fi, ri] = k.split(":").map(Number), r = D()[fi] && D()[fi].rooms[ri]; if (!r) return;
-      if (t) { r.type = t; r.beds = BEDS[t]; r.pax = PAX[t]; r.layout = null; if (SH.isApt(t) && !r.features.includes("kitchen")) r.features = [...r.features, "kitchen"]; }
+      if (t) applyType(r, t);
       if (v !== "__") r.view = v;
       if (ft) { const name = ft.slice(1); r.features = ft[0] === "+" ? [...new Set([...r.features, name])] : r.features.filter((x) => x !== name); } });
     renderSetup(); toast(`Updated ${setupSel.size} rooms`); };
+  root.querySelectorAll("[data-addspace]").forEach((sl) => sl.onchange = () => { const t = sl.value; if (!t) return; const f = D()[+sl.dataset.addspace];
+    const used = new Set(D().flatMap((g) => g.rooms.map((r) => r.number))), base = { conf: "CONF", meet: "MEET", rest: "REST", bar: "BAR", kit: "KITCHEN", spa: "SPA", gym: "GYM", pool: "POOL", laun: "LAUNDRY", stor: "STORE", staff: "STAFF", office: "OFFICE", tech: "TECH", lobby: "LOBBY", wc: "WC", park: "PARKING" }[t];
+    let code = f.level === 0 ? base : base + "-" + f.level, k = 2; while (used.has(code)) code = base + "-" + (f.level ? f.level + "." : "") + k++;
+    const r = { number: code, features: [], view: "" }; applyType(r, t); f.rooms.push(r); renderSetup(); });
+  const rg = $("ruGo"); if (rg) rg.onclick = () => { const mode = $("ruMode").value, val = $("ruVal").value.trim(), t = $("ruType").value, v = $("ruView").value, ft = $("ruFeat").value; let n = 0;
+    if ((mode === "end" || mode === "range" || mode === "floors") && !val) { toast("Type a value first, e.g. 01, 25"); return; }
+    D().forEach((f) => f.rooms.forEach((r) => { if (SH.isSpace(r.type)) return; r._level = f.level; if (!ruleMatch(r, mode, val)) return; n++;
+      if (t) applyType(r, t); if (v !== "__") r.view = v; if (ft) { const nm = ft.slice(1); r.features = ft[0] === "+" ? [...new Set([...r.features, nm])] : r.features.filter((x) => x !== nm); } delete r._level; }));
+    D().forEach((f) => f.rooms.forEach((r) => delete r._level)); renderSetup(); toast(n ? `Rule applied to ${n} rooms` : "No rooms matched"); };
   const bc = $("bkClear"); if (bc) bc.onclick = () => { setupSel = new Set(); renderSetup(); };
   const af = $("addFloor"); if (af) af.onclick = () => { const l = D().length ? Math.max(...D().map((f) => f.level)) + 1 : 0; D().push({ level: l, name: l === 0 ? "Ground floor" : "Floor " + l, rooms: [] }); renderSetup(); };
   const go = $("qbGo"); if (go) go.onclick = () => { const lo = +$("qbLow").value, hi = Math.max(lo, +$("qbHigh").value || lo), per = Math.max(0, +$("qbPer").value || 0), g = Math.max(0, +$("qbG").value || 0), ty = $("qbType").value; draft = [];
@@ -360,7 +415,7 @@ async function renderTeam() {
   const v = $("view-team"); v.innerHTML = `<div class="setup"><div class="blk"><h2>Invite your team</h2><p class="meta">Create a code for the role and give it to the person. They sign up, choose “Join a hotel” and type the code. Codes work for 30 days and can be used by several people.</p>
    <div class="row" style="margin-top:12px">${["desk", "hk", "mt"].map((r) => `<button class="small" data-inv="${r}">+ ${ROLE[r]} code</button>`).join("")}</div><div id="invList" style="margin-top:14px"><p class="empty">Loading…</p></div></div>
    <div class="blk"><h2>Staff apps</h2><p class="meta">Open these on the phone or tablet the staff use, then “Add to Home screen”. They sign in with their own account.</p>
-    <div class="row" style="margin-top:12px"><a class="small" href="hk.html" target="_blank" rel="noopener">Housekeeping app ›</a><a class="small" href="mt.html" target="_blank" rel="noopener">Maintenance app ›</a></div></div>
+    <div class="row" style="margin-top:12px"><a class="small" href="hk.html${api.demo ? "?demo" : ""}" target="_blank" rel="noopener">Housekeeping app ›</a><a class="small" href="mt.html${api.demo ? "?demo" : ""}" target="_blank" rel="noopener">Maintenance app ›</a></div></div>
    <div class="blk"><h2>People</h2><div id="memList"></div></div></div>`;
   const draw = async () => { let inv = []; try { inv = await api.invites(H.id); } catch (e) { toast(e.message); }
     $("invList").innerHTML = inv.length ? inv.map((i) => `<div class="invite"><span class="r">${ROLE[i.role]}</span><span class="code">${esc(i.code)}</span><span class="meta">valid until ${new Date(i.expires_at).toLocaleDateString()}</span><button class="small" style="margin-left:auto" data-delinv="${esc(i.code)}">Delete</button></div>`).join("") : `<p class="empty">No active codes.</p>`;
@@ -411,7 +466,7 @@ function concierge(q) { const c = parseQ(q), tags = c.tags; if (!tags.length) re
   const avail = (id) => { const r = rec(id); return r.status === "free" && !openIss(id).length ? "ready" : r.status === "dirty" || r.status === "cleaning" ? "soon" : null; };
   const byFresh = (a, b) => new Date(rec(b).last_cleaned || 0) - new Date(rec(a).last_cleaned || 0);
   const gapTag = tags.find((x) => x.k === "beds" || x.k === "pax"), gap = (id) => (gapTag ? (gapTag.k === "beds" ? ROOMS[id].beds : ROOMS[id].pax) - gapTag.v : 0);
-  const sorter = (a, b) => gap(a) - gap(b) || byFresh(a, b), all = Object.keys(ROOMS), full = all.filter((id) => score(id) === tags.length);
+  const sorter = (a, b) => gap(a) - gap(b) || byFresh(a, b), all = Object.keys(ROOMS).filter((id) => !isSpace(id) || tags.some((t) => t.k === "room")), full = all.filter((id) => score(id) === tags.length);
   return { c, ready: full.filter((id) => avail(id) === "ready").sort(sorter), soon: full.filter((id) => avail(id) === "soon").sort((a, b) => (rec(b).status === "cleaning") - (rec(a).status === "cleaning") || sorter(a, b)),
     close: tags.length > 1 ? all.filter((id) => avail(id) === "ready" && score(id) === tags.length - 1).sort(sorter).slice(0, 4) : [] }; }
 let cqIdx = 0;
@@ -448,7 +503,7 @@ function render() {
   $("concierge").hidden = !can("desk");
   $("calmBtn").hidden = view !== "desk"; $("calmBtn").setAttribute("aria-pressed", document.body.classList.contains("calm")); $("calmBtn").textContent = document.body.classList.contains("calm") ? "Calm mode on" : "Calm mode";
   ["desk", "hk", "mt", "setup", "team"].forEach((v) => ($("view-" + v).hidden = v !== view));
-  if (api.demo) { $("banner").hidden = false; $("banner").textContent = "Demo mode: sample data saved only in this browser. Open a second tab as Housekeeping to watch rooms update live."; } else $("banner").hidden = true;
+  if (api.demo) { $("banner").hidden = false; $("banner").innerHTML = `Demo hotel with sample data, saved only in this browser. Try it live: open the <a href="hk.html${location.search.includes("demo") ? "?demo" : ""}" target="_blank" rel="noopener">Housekeeping app</a> in a second tab, then check a guest out here.`; } else $("banner").hidden = true;
   if (view === "desk") {
     const noRooms = !Object.keys(ROOMS).length;
     $("modeLabel").textContent = mode === "building" ? "" : floorName(floor); $("modeHint").textContent = mode === "building" ? (noRooms ? "No rooms yet · open Setup" : "") : "Click a room";
@@ -470,6 +525,7 @@ function bind(root) {
   root.querySelectorAll("[data-do]").forEach((b) => b.onclick = () => { const id = b.dataset.room || sel, d = b.dataset.do;
     if (d === "checkin") patchRoom(id, { status: "occupied", guest: (($("guest") || {}).value || "").trim() }, "checkin");
     if (d === "checkout") patchRoom(id, { status: "dirty" }, "checkout");
+    if (d === "request") patchRoom(id, { status: "dirty" });
     if (d === "start") patchRoom(id, { status: "cleaning" }, "start");
     if (d === "cleaned") { const box = root.querySelector(`[data-miss="${id}"]`) || root.querySelector("#miss"); const miss = box ? [...box.querySelectorAll('[aria-pressed="true"]')].map((x) => x.dataset.item) : [];
       patchRoom(id, { status: "free" }, "cleaned"); miss.forEach((m) => addIssue(id, m)); }
